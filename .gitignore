@@ -1,0 +1,29 @@
+# Python virtual environment
+venv/
+venv39/
+
+# SQLite local database
+*.db
+
+# Python cache
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Environment variables — never commit secrets
+.env
+*.env.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Node (for when frontend is added)
+node_modules/
+dist/
+.vite/
