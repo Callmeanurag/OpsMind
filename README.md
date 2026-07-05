@@ -57,7 +57,7 @@ OpsMind follows a standard **3-tier architecture**.
 │   Incidents, full-text index     │
 └──────────────────────────────────┘
 
-<img width="3956" height="1745" alt="Blank diagram" src="https://github.com/user-attachments/assets/34bce3e1-6a5c-437f-af53-5e12c55d7df4" />
+
 
 ```
 
