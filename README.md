@@ -56,6 +56,9 @@ OpsMind follows a standard **3-tier architecture**.
 │   PostgreSQL 16                  │
 │   Incidents, full-text index     │
 └──────────────────────────────────┘
+
+
+
 ```
 
 - The **frontend** is a single-page application. All state — the incident list, search results, selected incident, and AI response — lives in one Dashboard component. No client-side routing is needed.
