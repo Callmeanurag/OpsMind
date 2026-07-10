@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { api, Incident, IncidentSummary, IncidentCreate } from "../services/api";
+import { api, Incident, IncidentSummary, IncidentCreate, QuickFixResponse, CloseIncidentPayload } from "../services/api";
 import SearchBar from "../components/SearchBar";
 import IncidentCard from "../components/IncidentCard";
 import IncidentDetail from "../components/IncidentDetail";
@@ -14,16 +14,30 @@ const EMPTY_FORM: IncidentCreate = {
   team: "",
 };
 
+const EMPTY_CLOSE_FORM: CloseIncidentPayload = {
+  resolution_summary: "",
+  rca_notes: "",
+  remediation_steps: "",
+  preventive_actions: "",
+  resolved_by: "",
+  closure_comment: "",
+};
+
 export default function Dashboard() {
-  const [incidents, setIncidents]           = useState<Incident[]>([]);
-  const [selected, setSelected]             = useState<Incident | null>(null);
-  const [loading, setLoading]               = useState(true);
-  const [error, setError]                   = useState<string | null>(null);
-  const [summary, setSummary]               = useState<IncidentSummary | null>(null);
-  const [summaryLoading, setSummaryLoading] = useState(false);
-  const [showForm, setShowForm]             = useState(false);
-  const [form, setForm]                     = useState<IncidentCreate>(EMPTY_FORM);
-  const [formError, setFormError]           = useState<string | null>(null);
+  const [incidents, setIncidents]                   = useState<Incident[]>([]);
+  const [selected, setSelected]                     = useState<Incident | null>(null);
+  const [loading, setLoading]                       = useState(true);
+  const [error, setError]                           = useState<string | null>(null);
+  const [summary, setSummary]                       = useState<IncidentSummary | null>(null);
+  const [summaryLoading, setSummaryLoading]         = useState(false);
+  const [quickFix, setQuickFix]                     = useState<QuickFixResponse | null>(null);
+  const [quickFixLoading, setQuickFixLoading]       = useState(false);
+  const [showForm, setShowForm]                     = useState(false);
+  const [form, setForm]                             = useState<IncidentCreate>(EMPTY_FORM);
+  const [formError, setFormError]                   = useState<string | null>(null);
+  const [acknowledgeLoading, setAcknowledgeLoading] = useState(false);
+  const [showCloseForm, setShowCloseForm]           = useState(false);
+  const [closeForm, setCloseForm]                   = useState<CloseIncidentPayload>(EMPTY_CLOSE_FORM);
 
   useEffect(() => {
     loadIncidents();
@@ -90,20 +104,85 @@ export default function Dashboard() {
     }
   }
 
+  async function handleQuickFix() {
+    if (!selected) return;
+    setQuickFixLoading(true);
+    try {
+      const result = await api.quickFixIncident(selected.id);
+      setQuickFix(result);
+    } catch {
+      setQuickFix({
+        likely_issue: "Failed to generate quick fix suggestions.",
+        quick_fixes: [],
+        commands: [],
+        verification_steps: [],
+        escalate_to: "—",
+      });
+    } finally {
+      setQuickFixLoading(false);
+    }
+  }
+
+  async function handleAcknowledge() {
+    if (!selected) return;
+    setAcknowledgeLoading(true);
+    try {
+      const updated = await api.acknowledgeIncident(selected.id);
+      setSelected(updated);
+      setIncidents((prev) => prev.map((i) => (i.id === updated.id ? updated : i)));
+    } catch {
+      // button remains clickable; no partial state to roll back
+    } finally {
+      setAcknowledgeLoading(false);
+    }
+  }
+
+  async function handleCloseIncident(e: React.FormEvent) {
+    e.preventDefault();
+    if (!selected) return;
+    try {
+      const updated = await api.closeIncident(selected.id, closeForm);
+      setSelected(updated);
+      setIncidents((prev) => prev.map((i) => (i.id === updated.id ? updated : i)));
+      setShowCloseForm(false);
+    } catch {
+      // silently ignore; form stays open so user can retry
+    }
+  }
+
   function handleOpenModal(incident: Incident) {
     setSelected(incident);
-    setSummary(null);        // clear any previous summary
+    setSummary(null);
     setSummaryLoading(false);
+    setQuickFix(null);
+    setQuickFixLoading(false);
+    setShowCloseForm(false);
+    setCloseForm({
+      resolution_summary: incident.resolution_summary ?? "",
+      rca_notes: incident.rca_notes ?? "",
+      remediation_steps: incident.remediation_steps ?? "",
+      preventive_actions: incident.preventive_actions ?? "",
+      resolved_by: incident.resolved_by ?? "",
+      closure_comment: incident.closure_comment ?? "",
+    });
+    setAcknowledgeLoading(false);
   }
 
   function handleCloseModal() {
     setSelected(null);
-    setSummary(null);        // reset summary state on close
+    setSummary(null);
     setSummaryLoading(false);
+    setQuickFix(null);
+    setQuickFixLoading(false);
+    setShowCloseForm(false);
+    setCloseForm(EMPTY_CLOSE_FORM);
+    setAcknowledgeLoading(false);
   }
 
-  const openCount    = incidents.filter((i) => i.status === "open").length;
-  const resolvedCount = incidents.filter((i) => i.status === "resolved").length;
+  const openCount         = incidents.filter((i) => i.status === "open").length;
+  const acknowledgedCount = incidents.filter((i) => i.status === "acknowledged").length;
+  const resolvedCount     = incidents.filter((i) => i.status === "resolved").length;
+  const closedCount       = incidents.filter((i) => i.status === "closed").length;
 
   return (
     <div
@@ -127,9 +206,11 @@ export default function Dashboard() {
       {/* Stats bar */}
       <div style={{ display: "flex", gap: 12, marginBottom: "1.5rem" }}>
         {[
-          { label: "Total",    value: incidents.length, color: "#334155" },
-          { label: "Open",     value: openCount,         color: "#dc2626" },
-          { label: "Resolved", value: resolvedCount,     color: "#16a34a" },
+          { label: "Total",        value: incidents.length,  color: "#334155" },
+          { label: "Open",         value: openCount,          color: "#dc2626" },
+          { label: "Acknowledged", value: acknowledgedCount,  color: "#d97706" },
+          { label: "Resolved",     value: resolvedCount,      color: "#16a34a" },
+          { label: "Closed",       value: closedCount,        color: "#6366f1" },
         ].map((s) => (
           <div
             key={s.label}
@@ -267,6 +348,18 @@ export default function Dashboard() {
           summaryLoading={summaryLoading}
           onClose={handleCloseModal}
           onSummarize={handleSummarize}
+          quickFix={quickFix}
+          quickFixLoading={quickFixLoading}
+          onQuickFix={handleQuickFix}
+          acknowledgeLoading={acknowledgeLoading}
+          onAcknowledge={handleAcknowledge}
+          showCloseForm={showCloseForm}
+          onToggleCloseForm={() => setShowCloseForm((v) => !v)}
+          closeForm={closeForm}
+          onCloseFormChange={(field, value) =>
+            setCloseForm((prev) => ({ ...prev, [field]: value }))
+          }
+          onCloseIncident={handleCloseIncident}
         />
       )}
     </div>

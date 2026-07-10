@@ -6,7 +6,7 @@ from app.models.incident import Incident
 # Read once at startup. Defaults to mock mode if the variable is missing or unset.
 USE_MOCK = os.getenv("USE_MOCK_AI", "true").lower() == "true"
 
-# Realistic mock response used in local development and demos
+# ── Summarize mock ────────────────────────────────────────────────────────────
 MOCK_RESPONSE = {
     "summary": (
         "A service degradation was detected affecting end users. "
@@ -30,6 +30,86 @@ def summarize_incident(incident: Incident) -> dict:
     if USE_MOCK:
         return MOCK_RESPONSE
     return _call_azure_openai(incident)
+
+
+# ── Quick Fix mock ────────────────────────────────────────────────────────────
+MOCK_QUICK_FIX = {
+    "likely_issue": (
+        "The service is likely experiencing connection pool exhaustion or a memory "
+        "leak introduced by a recent deployment."
+    ),
+    "quick_fixes": [
+        "Restart the affected pods to release leaked connections.",
+        "Increase the database connection pool size if it is near the configured limit.",
+        "Roll back the most recent deployment if the issue started after a release.",
+        "Scale up the number of pod replicas temporarily to absorb the load spike.",
+    ],
+    "commands": [
+        "kubectl rollout restart deployment/<service-name> -n opsmind-prod",
+        "kubectl get pods -n opsmind-prod -w",
+        "kubectl logs <pod-name> -n opsmind-prod --tail=100",
+        "kubectl rollout undo deployment/<service-name> -n opsmind-prod",
+    ],
+    "verification_steps": [
+        "Confirm all pods reach Running state after the restart.",
+        "Check the error rate in Grafana — it should drop within 2-3 minutes.",
+        "Validate the /health endpoint returns HTTP 200 OK.",
+        "Monitor Log Analytics for any recurring errors over the next 10 minutes.",
+    ],
+    "escalate_to": (
+        "Escalate to the Platform Engineering team if the issue persists after "
+        "restarting pods and rolling back. Share kubectl logs output and the "
+        "relevant Grafana dashboard panels."
+    ),
+}
+
+
+def quick_fix_incident(incident: Incident) -> dict:
+    """Returns actionable quick-fix guidance for an incident."""
+    if USE_MOCK:
+        return MOCK_QUICK_FIX
+    return _call_azure_openai_quick_fix(incident)
+
+
+def _call_azure_openai_quick_fix(incident: Incident) -> dict:
+    """
+    Calls Azure OpenAI to generate structured quick-fix guidance.
+    Uses the same env vars as summarize: AZURE_OPENAI_ENDPOINT,
+    AZURE_OPENAI_API_KEY, AZURE_OPENAI_DEPLOYMENT.
+    """
+    from openai import AzureOpenAI
+
+    client = AzureOpenAI(
+        azure_endpoint=os.environ["AZURE_OPENAI_ENDPOINT"],
+        api_key=os.environ["AZURE_OPENAI_API_KEY"],
+        api_version="2024-02-01",
+    )
+
+    prompt = f"""You are an on-call SRE assistant. Given the incident below, respond with a JSON object
+containing exactly five keys:
+- "likely_issue": one sentence diagnosing the most probable root cause
+- "quick_fixes": a JSON array of 3-5 short actionable fix steps (each as a plain string)
+- "commands": a JSON array of 3-5 terminal/kubectl commands to investigate or remediate (each as a plain string)
+- "verification_steps": a JSON array of 3-5 steps to confirm the fix worked (each as a plain string)
+- "escalate_to": one sentence on who to escalate to and what information to share if the fixes do not work
+
+Incident:
+  Title:       {incident.title}
+  Description: {incident.description or "N/A"}
+  Severity:    {incident.severity}
+  Service:     {incident.service or "N/A"}
+  Team:        {incident.team or "N/A"}
+  RCA Notes:   {incident.rca_notes or "N/A"}
+"""
+
+    response = client.chat.completions.create(
+        model=os.environ["AZURE_OPENAI_DEPLOYMENT"],
+        messages=[{"role": "user", "content": prompt}],
+        response_format={"type": "json_object"},
+        temperature=0.3,
+    )
+
+    return json.loads(response.choices[0].message.content)
 
 
 def _call_azure_openai(incident: Incident) -> dict:

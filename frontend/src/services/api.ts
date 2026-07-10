@@ -13,6 +13,15 @@ export interface Incident {
   rca_notes: string;
   remediation_steps: string;
   created_at: string;
+  acknowledged_at?: string | null;
+  resolved_at?: string | null;
+  closed_at?: string | null;
+  resolution_summary?: string | null;
+  preventive_actions?: string | null;
+  resolved_by?: string | null;
+  closure_comment?: string | null;
+  tta_minutes?: number | null;
+  tte_minutes?: number | null;
 }
 
 export interface IncidentSummary {
@@ -21,12 +30,29 @@ export interface IncidentSummary {
   remediation: string;
 }
 
+export interface QuickFixResponse {
+  likely_issue: string;
+  quick_fixes: string[];
+  commands: string[];
+  verification_steps: string[];
+  escalate_to: string;
+}
+
 export interface IncidentCreate {
   title: string;
   description: string;
   severity: string;
   service: string;
   team: string;
+}
+
+export interface CloseIncidentPayload {
+  resolution_summary?: string;
+  rca_notes?: string;
+  remediation_steps?: string;
+  preventive_actions?: string;
+  resolved_by?: string;
+  closure_comment?: string;
 }
 
 // Generic fetch wrapper — throws on non-2xx responses
@@ -59,5 +85,22 @@ export const api = {
     request<IncidentSummary>("/api/ai/summarize", {
       method: "POST",
       body: JSON.stringify({ incident_id }),
+    }),
+
+  quickFixIncident: (incident_id: number) =>
+    request<QuickFixResponse>("/api/ai/quick-fix", {
+      method: "POST",
+      body: JSON.stringify({ incident_id }),
+    }),
+
+  acknowledgeIncident: (id: number) =>
+    request<Incident>(`/api/incidents/${id}/acknowledge`, {
+      method: "PATCH",
+    }),
+
+  closeIncident: (id: number, payload: CloseIncidentPayload) =>
+    request<Incident>(`/api/incidents/${id}/close`, {
+      method: "PATCH",
+      body: JSON.stringify(payload),
     }),
 };
